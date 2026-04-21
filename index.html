@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FraudShield AI — Credit Card Fraud Detection</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&display=swap" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <span class="logo-icon">⬡</span>
+    <span class="logo-text">FraudShield</span>
+    <span class="logo-sub">AI</span>
+  </div>
+
+  <nav class="sidebar-nav">
+    <button class="nav-item active" data-tab="overview"><span class="nav-icon">◈</span><span>Overview</span></button>
+    <button class="nav-item" data-tab="models"><span class="nav-icon">◎</span><span>Model Analytics</span></button>
+    <button class="nav-item" data-tab="predict"><span class="nav-icon">◉</span><span>Live Predict</span></button>
+    <button class="nav-item" data-tab="transactions"><span class="nav-icon">◫</span><span>Transactions</span></button>
+    <button class="nav-item" data-tab="alerts"><span class="nav-icon">◬</span><span>Alerts</span><span class="badge-count" id="alertBadgeCount">10</span></button>
+    <button class="nav-item" data-tab="about"><span class="nav-icon">◌</span><span>About</span></button>
+  </nav>
+
+  <div class="sidebar-controls">
+    <div class="sc-title">Dashboard Controls</div>
+
+    <div class="sc-group">
+      <label class="sc-label">Risk Threshold <span class="sc-val" id="valRisk">50%</span></label>
+      <input type="range" class="sc-slider" id="sliderRisk" min="10" max="90" value="50" oninput="onSliderRisk(this.value)">
+      <div class="sc-hint">Flag transactions above this fraud probability</div>
+    </div>
+
+    <div class="sc-group">
+      <label class="sc-label">Alert Filter <span class="sc-val" id="valPriority">All</span></label>
+      <input type="range" class="sc-slider" id="sliderPriority" min="0" max="2" value="0" step="1" oninput="onSliderPriority(this.value)">
+      <div class="sc-hint">0=All · 1=Medium+ · 2=High only</div>
+    </div>
+
+    <div class="sc-group">
+      <label class="sc-label">Feed Size <span class="sc-val" id="valFeed">12</span></label>
+      <input type="range" class="sc-slider" id="sliderFeed" min="5" max="30" value="12" step="1" oninput="onSliderFeed(this.value)">
+      <div class="sc-hint">Rows shown in transaction feed</div>
+    </div>
+
+    <div class="sc-group">
+      <label class="sc-label">Auto-Refresh <span class="sc-val" id="valRefresh">Off</span></label>
+      <input type="range" class="sc-slider" id="sliderRefresh" min="0" max="4" value="0" step="1" oninput="onSliderRefresh(this.value)">
+      <div class="sc-hint">0=Off · 5s · 15s · 30s · 60s</div>
+    </div>
+
+    <div class="sc-group">
+      <label class="sc-label">Chart Opacity <span class="sc-val" id="valOpacity">80%</span></label>
+      <input type="range" class="sc-slider" id="sliderOpacity" min="20" max="100" value="80" step="5" oninput="onSliderOpacity(this.value)">
+      <div class="sc-hint">Fill opacity on area charts</div>
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="status-dot-wrap"><span class="pulse-dot"></span><span>Model Online</span></div>
+    <div class="model-tag">Random Forest</div>
+  </div>
+</aside>
+
+<main class="main" id="main">
+  <header class="topbar">
+    <button class="hamburger" id="hamburger" aria-label="Toggle menu">&#9776;</button>
+    <div class="topbar-title" id="topbarTitle">System Overview</div>
+    <div class="topbar-right">
+      <span class="chip chip-green">System Active</span>
+      <span class="chip chip-blue" id="chipModel">RF · AUPRC 0.828</span>
+    </div>
+  </header>
+
+  <!-- OVERVIEW -->
+  <section class="tab active" id="tab-overview">
+    <div class="metric-row">
+      <div class="metric-card accent-cyan"><div class="metric-label">Total Transactions</div><div class="metric-value" id="m-total">—</div><div class="metric-sub">In dataset</div></div>
+      <div class="metric-card accent-red"><div class="metric-label">Fraud Cases</div><div class="metric-value" id="m-fraud">—</div><div class="metric-sub" id="m-fraud-pct">—% of total</div></div>
+      <div class="metric-card accent-green"><div class="metric-label">AUROC (best model)</div><div class="metric-value" id="m-auroc">—</div><div class="metric-sub">Near-perfect discrimination</div></div>
+      <div class="metric-card accent-amber"><div class="metric-label">AUPRC (best model)</div><div class="metric-value" id="m-auprc">—</div><div class="metric-sub">Key imbalanced-class metric</div></div>
+      <div class="metric-card accent-green"><div class="metric-label">F1 Score</div><div class="metric-value" id="m-f1">—</div><div class="metric-sub">Fraud class harmonic mean</div></div>
+      <div class="metric-card accent-cyan"><div class="metric-label">Avg Fraud Amount</div><div class="metric-value" id="m-fraud-amt">—</div><div class="metric-sub" id="m-legit-amt">vs — legit avg</div></div>
+    </div>
+    <div class="chart-row">
+      <div class="chart-card half">
+        <div class="chart-header">Class Distribution</div>
+        <div class="chart-wrap h180"><canvas id="distChart"></canvas></div>
+        <div class="legend-row">
+          <span class="legend-dot" style="background:#00d4ff"></span><span class="legend-label" id="leg-legit">Legitimate</span>
+          <span class="legend-dot" style="background:#ff3b6e;margin-left:16px"></span><span class="legend-label" id="leg-fraud">Fraud</span>
+        </div>
+      </div>
+      <div class="chart-card half">
+        <div class="chart-header">Fraud Frequency by Hour of Day</div>
+        <div class="hour-bars" id="hourBars"></div>
+        <div class="hour-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div>
+      </div>
+    </div>
+    <div class="chart-card full">
+      <div class="chart-header">Top Feature Importances — Random Forest</div>
+      <div id="featureBars"></div>
+    </div>
+  </section>
+
+  <!-- MODEL ANALYTICS -->
+  <section class="tab" id="tab-models">
+    <div class="model-compare-row" id="modelCards"></div>
+    <div class="chart-row">
+      <div class="chart-card half">
+        <div class="chart-header">Confusion Matrix — Best Model (Test Set)</div>
+        <div id="confusionMatrix" class="cm-wrap"></div>
+      </div>
+      <div class="chart-card half">
+        <div class="chart-header">ROC Curve — Receiver Operating Characteristic</div>
+        <div class="graph-explainer">
+          <span class="ge-tag">How to read</span>
+          <strong>Y-axis = True Positive Rate</strong> (what fraction of actual frauds did we catch?).
+          <strong>X-axis = False Positive Rate</strong> (what fraction of legit transactions were wrongly flagged?).
+          A <em>perfect model</em> hugs the <strong>top-left corner</strong> (catches all fraud, zero false alarms).
+          The <em>dashed diagonal</em> = random guessing (AUROC = 0.5).
+          <strong>Our AUROC = 0.9786</strong> — pick any random fraud and any random legit transaction; our model ranks the fraud as riskier <strong>97.86% of the time</strong>.
+        </div>
+        <div class="chart-wrap h200"><canvas id="rocChart"></canvas></div>
+        <div class="graph-legend-row">
+          <span class="gl-dot" style="background:#00d4ff"></span><span class="gl-label">Model ROC curve — top-left = perfect</span>
+          <span class="gl-dot gl-dashed" style="background:#6b7fa8;margin-left:10px"></span><span class="gl-label">Random baseline (AUROC = 0.5)</span>
+        </div>
+        <div class="roc-quadrant-note">
+          <span class="rq-zone rq-green">▲ Top-left → ideal (high recall, low false alarms)</span>
+          <span class="rq-zone rq-amber">↗ Diagonal → random guessing</span>
+          <span class="rq-zone rq-red">▼ Bottom-right → worse than random</span>
+        </div>
+      </div>
+    </div>
+    <div class="chart-card full">
+      <div class="chart-header">Precision-Recall Curve — <span id="prTitle">Best Model</span></div>
+      <div class="graph-explainer">
+        <span class="ge-tag">Why this matters more than ROC here</span>
+        With only 0.17% fraud, a model predicting everything as legit scores AUROC ≈ 0.99 but catches <em>zero fraud</em>.
+        <strong>Precision (Y-axis)</strong> = of all flagged transactions, how many are actually fraud? (Avoid wasting analyst time)
+        <strong>Recall / Sensitivity (X-axis)</strong> = of all real frauds, what fraction did we catch? (Avoid letting fraud slip through)
+        Moving <em>left on the curve</em> = stricter threshold → fewer false alarms but miss more real fraud.
+        Moving <em>right</em> = looser threshold → catch more fraud but generate more false alarms.
+        The <em>dashed baseline at 0.17%</em> is random guessing. <strong>Our AUPRC = 0.8425 is ~490× above baseline</strong>.
+      </div>
+      <div class="chart-wrap h260"><canvas id="prChart"></canvas></div>
+      <div class="graph-legend-row">
+        <span class="gl-dot" style="background:#00e5a0"></span><span class="gl-label">Model PR curve (higher &amp; further right = better)</span>
+        <span class="gl-dot gl-dashed" style="background:#6b7fa8;margin-left:10px"></span><span class="gl-label">Random baseline = fraud prevalence (0.17%)</span>
+      </div>
+      <div class="pr-threshold-note">💡 <strong>Tip:</strong> Use the <em>Risk Threshold</em> slider in the sidebar to simulate moving along this curve — higher threshold = moving left (more precise, lower recall).</div>
+    </div>
+  </section>
+
+  <!-- PREDICT -->
+  <section class="tab" id="tab-predict">
+    <div class="predict-layout">
+      <div class="predict-left">
+        <div class="card">
+          <div class="card-header">Transaction Risk Analyzer</div>
+          <div class="card-sub">Enter transaction features — V1–V28 are PCA-transformed principal components</div>
+          <div class="quickload-row">
+            <button class="qbtn qbtn-legit" onclick="loadSample('legit')">Load Legit Sample</button>
+            <button class="qbtn qbtn-fraud" onclick="loadSample('fraud')">Load Fraud Sample</button>
+            <button class="qbtn qbtn-clear" onclick="clearForm()">Clear</button>
+          </div>
+          <div class="form-section-label">Core Features</div>
+          <div class="input-grid">
+            <div class="field"><label>Amount ($)</label><input type="number" id="f-Amount" placeholder="149.62" step="0.01"></div>
+            <div class="field"><label>Time (s)</label><input type="number" id="f-Time" placeholder="0" step="1"></div>
+          </div>
+          <div class="form-section-label">PCA Features — V1 to V14</div>
+          <div class="input-grid" id="v1Grid"></div>
+          <div class="form-section-label">PCA Features — V15 to V28</div>
+          <div class="input-grid" id="v2Grid"></div>
+          <button class="analyze-btn" id="analyzeBtn" onclick="runPredict()"><span id="btnText">&#9654; Analyze Transaction</span></button>
+        </div>
+      </div>
+      <div class="predict-right">
+        <div class="result-card" id="resultCard" style="display:none">
+          <div class="result-header">Analysis Result</div>
+          <div class="score-ring-wrap">
+            <svg class="score-ring" viewBox="0 0 120 120">
+              <circle class="ring-bg"   cx="60" cy="60" r="50" fill="none" stroke-width="8"/>
+              <circle class="ring-fill" cx="60" cy="60" r="50" fill="none" stroke-width="8" stroke-dasharray="314" stroke-dashoffset="314" id="ringFill" transform="rotate(-90 60 60)"/>
+            </svg>
+            <div class="ring-content"><div class="ring-pct" id="ringPct">0%</div><div class="ring-label">Risk</div></div>
+          </div>
+          <div class="verdict-wrap">
+            <div class="verdict-badge" id="verdictBadge">—</div>
+            <div class="verdict-text" id="verdictText">—</div>
+          </div>
+          <div class="risk-bar-section">
+            <div class="risk-track">
+              <div class="seg-low"></div><div class="seg-med"></div><div class="seg-high"></div>
+              <div class="risk-needle" id="riskNeedle"></div>
+            </div>
+            <div class="risk-labels"><span>Low</span><span>Medium</span><span>High</span></div>
+          </div>
+          <div class="factors-grid" id="factorsGrid"></div>
+        </div>
+        <div class="result-placeholder" id="resultPlaceholder">
+          <div class="placeholder-icon">◈</div>
+          <div>Enter transaction features and click Analyze</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TRANSACTIONS -->
+  <section class="tab" id="tab-transactions">
+    <div class="chart-card full" style="margin-bottom:20px">
+      <div class="chart-header" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Simulated Transaction Feed</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="tx-refresh-status" id="txRefreshStatus"></span>
+          <button class="refresh-btn" id="txRefreshBtn" onclick="refreshTransactions()">↻ Refresh</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="tx-table">
+          <thead><tr><th>ID</th><th>Time</th><th>Amount</th><th>Risk Score</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="txBody"></tbody>
+        </table>
+      </div>
+      <div class="tx-footer">
+        <span id="txCount" class="tx-count-label"></span>
+        <span id="txTimestamp" class="tx-timestamp"></span>
+      </div>
+    </div>
+    <div class="chart-card full">
+      <div class="chart-header">Transaction Amount Distribution — Fraud vs Legitimate (%)</div>
+      <div class="chart-wrap h240"><canvas id="amountChart"></canvas></div>
+    </div>
+  </section>
+
+  <!-- ALERTS -->
+  <section class="tab" id="tab-alerts">
+    <div class="metric-row">
+      <div class="metric-card accent-red"><div class="metric-label">High Priority</div><div class="metric-value" id="alertCountHigh">3</div><div class="metric-sub">Immediate action required</div></div>
+      <div class="metric-card accent-amber"><div class="metric-label">Under Review</div><div class="metric-value" id="alertCountMed">7</div><div class="metric-sub">Pending verification</div></div>
+      <div class="metric-card accent-green"><div class="metric-label">Resolved (24 hr)</div><div class="metric-value" id="alertCountResolved">24</div><div class="metric-sub">Closed without incident</div></div>
+      <div class="metric-card accent-cyan"><div class="metric-label">Total Monitored</div><div class="metric-value" id="alertCountTotal">34</div><div class="metric-sub">Last 24 hours</div></div>
+    </div>
+    <div class="chart-card full">
+      <div class="alerts-toolbar">
+        <div class="chart-header" style="margin-bottom:0">Active Alert Feed</div>
+        <div class="alerts-toolbar-right">
+          <button class="alert-action-btn btn-resolve-all" onclick="resolveAllAlerts()">✓ Resolve All</button>
+          <button class="alert-action-btn btn-snooze-all" onclick="snoozeAllAlerts()">⏸ Snooze 5 min</button>
+          <button class="alert-action-btn btn-dismiss-all" onclick="dismissAllAlerts()">✕ Dismiss All</button>
+        </div>
+      </div>
+
+      <!-- Snooze banner -->
+      <div id="snoozeBanner" class="snooze-banner" style="display:none">
+        <span>⏸</span> All alerts snoozed — resuming in <strong id="snoozeCountdown">5:00</strong>
+        <button class="snooze-cancel-btn" onclick="cancelSnooze()">Resume Now</button>
+      </div>
+
+      <!-- Bulk priority bar -->
+      <div class="alert-priority-bar">
+        <span class="apb-label">Selected alerts:</span>
+        <button class="apb-btn apb-high" onclick="bulkSetPriority('high')">🔴 Set High</button>
+        <button class="apb-btn apb-med"  onclick="bulkSetPriority('med')">🟡 Set Medium</button>
+        <button class="apb-btn apb-info" onclick="bulkSetPriority('info')">🔵 Set Info</button>
+        <button class="apb-btn apb-resolve" onclick="bulkResolve()">✓ Resolve Selected</button>
+        <span class="apb-hint" id="apbHint">— check boxes to enable bulk actions</span>
+      </div>
+
+      <div id="alertFeed" style="margin-top:10px"></div>
+      <div id="alertEmpty" class="alert-empty" style="display:none"><span>✓</span> No active alerts — all clear</div>
+    </div>
+  </section>
+
+  <!-- ABOUT -->
+  <section class="tab" id="tab-about">
+    <div class="about-hero">
+      <div class="about-hero-icon">⬡</div>
+      <div class="about-hero-text">
+        <div class="about-hero-title">FraudShield AI — Technical Deep Dive</div>
+        <div class="about-hero-sub">AI/ML Course · Jaypee Institute of Information Technology, Noida · Dr. Niyati Agrawal · Batch B3</div>
+        <p>FraudShield is a <strong>complete end-to-end machine learning system</strong> that detects credit card fraud in real time. It ingests raw transaction data, trains and compares multiple classifiers, selects the best model, and exposes it via a <strong>Flask REST API</strong> with this interactive analytics dashboard on top.</p>
+        <p>The core challenge is <strong>extreme class imbalance</strong>: only 0.172% of 284,807 transactions are fraudulent (492 cases). Standard accuracy is meaningless here — a model predicting everything as legit gets 99.83% accuracy but catches <em>zero</em> fraud. We solve this with class-weight balancing and evaluate using <strong>AUPRC</strong>, the only metric that stays honest under severe imbalance.</p>
+      </div>
+    </div>
+
+    <div class="about-grid">
+
+      <div class="about-card about-card-wide">
+        <div class="about-card-title">📊 Dataset — Kaggle ULB Credit Card Fraud</div>
+        <div class="about-detail-grid">
+          <div class="about-detail-item"><div class="adi-label">Source</div><div class="adi-val">European cardholders, September 2013 (2-day window)</div></div>
+          <div class="about-detail-item"><div class="adi-label">Size</div><div class="adi-val">284,807 transactions × 31 columns</div></div>
+          <div class="about-detail-item"><div class="adi-label">Fraud Cases</div><div class="adi-val">492 (0.1727%) — severe class imbalance</div></div>
+          <div class="about-detail-item"><div class="adi-label">Features</div><div class="adi-val">V1–V28 (PCA-transformed), Time (seconds since first tx), Amount (EUR)</div></div>
+          <div class="about-detail-item"><div class="adi-label">Target</div><div class="adi-val">Class: 0 = Legitimate, 1 = Fraud</div></div>
+          <div class="about-detail-item"><div class="adi-label">Privacy</div><div class="adi-val">V1–V28 are PCA-transformed to protect cardholder identity — original feature names undisclosed by dataset authors</div></div>
+        </div>
+      </div>
+
+      <div class="about-card about-card-wide">
+        <div class="about-card-title">🔢 Variable Explanations — Every Feature, In Detail</div>
+        <div class="var-table-wrap">
+          <table class="var-table">
+            <thead><tr><th>Variable</th><th>Type</th><th>What It Is &amp; How We Use It</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>Time</td><td><span class="vt-tag vt-raw">Raw</span></td>
+                <td>Seconds elapsed since the first transaction in the dataset (~48-hour window). Raw values reach 172,792 — without scaling this single feature would dominate any distance-based calculation. We apply <code>StandardScaler</code> (mean=0, std=1). <strong>Why keep it?</strong> Fraud clusters by hour — our dashboard shows peaks at midnight and midday — so time genuinely adds predictive signal.</td>
+              </tr>
+              <tr>
+                <td>Amount</td><td><span class="vt-tag vt-raw">Raw</span></td>
+                <td>Transaction value in Euros. Fraud avg = €122.21 vs legit avg = €88.29. Fraudsters often test cards with moderate amounts before larger withdrawals. <strong>Also StandardScaled.</strong> Critically, the scaler is <em>fit on training data only</em> then <em>transform-only</em> on test — preventing data leakage where test-set statistics would contaminate training.</td>
+              </tr>
+              <tr>
+                <td>V1 – V28</td><td><span class="vt-tag vt-pca">PCA</span></td>
+                <td>28 principal components computed by the dataset authors from the original confidential features (merchant category, device fingerprint, card type, location, etc). Each V<sub>i</sub> is a <strong>linear combination of original features</strong> pointing in a direction of maximum variance. PCA was applied at source to anonymise the data. <strong>V14, V10, V17, V12</strong> rank highest in importance — strongly negative values in these components are the clearest markers of fraudulent patterns in this dataset.</td>
+              </tr>
+              <tr>
+                <td>Class</td><td><span class="vt-tag vt-target">Target</span></td>
+                <td>Binary ground-truth label: 0 = legitimate, 1 = fraud. Used <em>only</em> as training signal and evaluation reference — never as model input. We <strong>stratify the train/test split on this column</strong> so both subsets maintain the same 0.17% fraud rate, preventing one split from accidentally having more or fewer fraud cases.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="about-card">
+        <div class="about-card-title">🌲 Why Random Forest? (Implementation Rationale)</div>
+        <div class="why-list">
+          <div class="why-item"><span class="why-icon">✦</span><div><strong>Ensemble of 100 decision trees</strong> — each tree trains on a random bootstrap sample with a random feature subset (√30 ≈ 5 features per split). Final fraud probability is the average across all trees, making it robust to noise typical in financial transaction data.</div></div>
+          <div class="why-item"><span class="why-icon">✦</span><div><strong>class_weight='balanced'</strong> — automatically assigns each fraud sample a weight of ~578× a legit sample (inversely proportional to class frequency). Without this, the model minimises loss by predicting everything legit, achieving 99.8% "accuracy" while catching zero fraud.</div></div>
+          <div class="why-item"><span class="why-icon">✦</span><div><strong>Non-linear decision boundaries</strong> — fraud patterns like "V14 &lt; −8 AND Amount > 500 AND Time between 02:00–04:00" are conjunctive rules a linear model misses entirely. Decision trees capture these naturally without manual feature engineering.</div></div>
+          <div class="why-item"><span class="why-icon">✦</span><div><strong>Built-in feature importance</strong> — RF computes how much each feature reduces Gini impurity across all trees, giving explainability into which PCA components drive predictions — critical when every block decision must be justifiable to a cardholder.</div></div>
+          <div class="why-item"><span class="why-icon">✦</span><div><strong>Outperforms Logistic Regression</strong> — LR achieves AUPRC ≈ 0.71, RF achieves 0.8425. The non-linearity advantage yields +13 percentage points on the most honest metric for this dataset.</div></div>
+        </div>
+      </div>
+
+      <div class="about-card">
+        <div class="about-card-title">🧠 ML Concepts — Detailed Explanations</div>
+        <div class="concept-detail-list">
+          <div class="cd-item"><span class="concept-tag">Supervised Learning</span><p>We train on labeled data where each row has Class=0 or 1. The model learns f(V1…V28, Time, Amount) → P(fraud). 80% of data is training, 20% held out for unbiased evaluation. Stratified split ensures equal fraud rate in both subsets.</p></div>
+          <div class="cd-item"><span class="concept-tag">Class Imbalance Handling</span><p>Three simultaneous strategies: (1) <code>class_weight='balanced'</code> in RandomForestClassifier, (2) <code>stratify=y</code> in train_test_split, (3) AUPRC as the primary evaluation metric rather than accuracy. Together they prevent the model from exploiting the 99.83% majority as a shortcut.</p></div>
+          <div class="cd-item"><span class="concept-tag">Feature Scaling</span><p><code>StandardScaler</code>: (value − mean) / std → mean=0, std=1. Applied to Amount and Time only (V1–V28 are pre-scaled from PCA). Fit on X_train only, then transform-only on X_test — no data leakage.</p></div>
+          <div class="cd-item"><span class="concept-tag">AUPRC — The Right Metric</span><p>Area Under Precision-Recall Curve. A random classifier gets AUPRC ≈ 0.0017 (= fraud rate). Our model gets 0.8425 — ~490× better than random. AUROC inflates artificially under imbalance because the huge number of True Negatives makes TPR look great even for poor fraud detection. AUPRC only rewards correctly catching actual fraud.</p></div>
+          <div class="cd-item"><span class="concept-tag">PCA Features (Pre-applied)</span><p>V1–V28 are already-computed principal components. PCA finds orthogonal directions of maximum variance. V14 being most important means the 14th principal component captures the direction in feature space that best separates fraud from legit — likely encoding merchant + device + location patterns simultaneously.</p></div>
+        </div>
+      </div>
+
+      <div class="about-card">
+        <div class="about-card-title">⚡ API Endpoints — How They Work</div>
+        <div class="api-detail-list">
+          <div class="api-detail-item">
+            <div class="api-method get">GET</div>
+            <div class="api-detail-body"><code>/api/model-data</code><p>Returns all pre-computed analytics as a single JSON blob: model results, confusion matrices, ROC/PR curve arrays, feature importances, hourly histogram, dataset stats. Called once on page load. Pre-computed at train time — API latency under 5 ms regardless of dataset size.</p></div>
+          </div>
+          <div class="api-detail-item">
+            <div class="api-method post">POST</div>
+            <div class="api-detail-body"><code>/api/predict</code><p>Accepts JSON with V1–V28, Time, Amount. Scales Amount and Time using the saved scaler, builds a 1-row DataFrame, runs <code>predict_proba()</code> on the saved RF model, returns fraud_probability, risk_level (LOW/MEDIUM/HIGH), and verdict string. Latency &lt;15 ms.</p></div>
+          </div>
+          <div class="api-detail-item">
+            <div class="api-method post">POST</div>
+            <div class="api-detail-body"><code>/api/batch-predict</code><p>Accepts <code>{"transactions":[{...}]}</code>. Vectorised — builds one DataFrame for all transactions and calls predict_proba once. Returns per-transaction scores plus a flagged count. Scales linearly with batch size; no per-row overhead.</p></div>
+          </div>
+          <div class="api-detail-item">
+            <div class="api-method get">GET</div>
+            <div class="api-detail-body"><code>/api/stats</code><p>Returns dataset-level aggregates: total count, fraud count, fraud percentage, amount statistics for fraud vs legit. Used by the Overview metric cards on page load.</p></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="about-card">
+        <div class="about-card-title">📈 Results Interpretation</div>
+        <p>On the 20% held-out test set (56,961 transactions, 98 frauds):</p>
+        <div class="perf-grid">
+          <div class="perf-item perf-good"><div class="perf-val">97.86%</div><div class="perf-key">AUROC</div><div class="perf-note">Near-perfect ranking</div></div>
+          <div class="perf-item perf-good"><div class="perf-val">84.25%</div><div class="perf-key">AUPRC</div><div class="perf-note">490× above random</div></div>
+          <div class="perf-item perf-ok"><div class="perf-val">79.6%</div><div class="perf-key">Precision</div><div class="perf-note">4 in 5 flags are real</div></div>
+          <div class="perf-item perf-ok"><div class="perf-val">83.7%</div><div class="perf-key">Recall</div><div class="perf-note">82 of 98 frauds caught</div></div>
+          <div class="perf-item perf-great"><div class="perf-val">99.96%</div><div class="perf-key">Specificity</div><div class="perf-note">Almost no false alarms</div></div>
+          <div class="perf-item perf-warn"><div class="perf-val">16</div><div class="perf-key">Missed Frauds</div><div class="perf-note">Of 98 in test set</div></div>
+        </div>
+        <p style="margin-top:12px;font-size:12px;color:var(--text-muted)">The 16 missed frauds (False Negatives) are the precision–recall tradeoff in action. Lowering the threshold from 50% catches more, but flags more legit transactions for manual review. The 21 false positives cost analyst time; the 16 false negatives cost in actual fraud losses — which matters more depends on deployment context.</p>
+      </div>
+
+      <div class="about-card">
+        <div class="about-card-title">📊 Model Comparison — AUPRC vs Baselines</div>
+        <div class="chart-wrap h200"><canvas id="aboutPerfChart"></canvas></div>
+        <p style="margin-top:10px;font-size:11px;color:var(--text-muted)">Random Forest (cyan) vs Logistic Regression vs random baseline. AUPRC is used as the comparison axis — the most honest metric for imbalanced datasets. The ~490× improvement over random is the key takeaway.</p>
+      </div>
+
+    </div>
+  </section>
+
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
