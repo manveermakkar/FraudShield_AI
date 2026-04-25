@@ -1,1 +1,14 @@
-*
+# Virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Generated static files
+{static/
+
+# OS files
+.DS_Store
+Thumbs.db
